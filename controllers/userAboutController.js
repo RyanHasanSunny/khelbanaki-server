@@ -5,6 +5,7 @@ const userGamesPlayedModel = require("../models/userGamesPlayedModel");
 const UserInteraction = require("../models/userInteractionModel");
 const Match = require("../models/matchModel");
 const User = require("../models/userModel");
+const Message = require("../models/messageModel");
 const JWT = require("jsonwebtoken");
 var { expressjwt: jwt } = require("express-jwt");
 
@@ -684,6 +685,142 @@ const getPotentialMatchesController = async (req, res) => {
   }
 };
 
+
+// Get messages for a match
+const getMessagesController = async (req, res) => {
+  try {
+    const { matchId } = req.params;
+    const userId = req.auth._id;
+
+    const match = await Match.findOne({
+      _id: matchId,
+      $or: [{ user1: userId }, { user2: userId }]
+    });
+
+    if (!match) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view these messages"
+      });
+    }
+
+    const messages = await Message.find({ match: matchId })
+      .sort({ timestamp: 1 })
+      .populate('sender', 'username');
+
+    res.status(200).json({
+      success: true,
+      messages
+    });
+
+  } catch (error) {
+    console.error("Error in getMessagesController:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error retrieving messages",
+      error: error.message
+    });
+  }
+};
+
+// Mark messages as read
+const markMessagesAsReadController = async (req, res) => {
+  try {
+    const { messageIds } = req.body;
+    const userId = req.auth._id;
+
+    await Message.updateMany(
+      {
+        _id: { $in: messageIds },
+        receiver: userId,
+        read: false
+      },
+      { $set: { read: true } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Messages marked as read"
+    });
+
+  } catch (error) {
+    console.error("Error in markMessagesAsReadController:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error marking messages as read",
+      error: error.message
+    });
+  }
+};
+
+
+const sendMessageController = async (req, res) => {
+  try {
+    const { matchId, receiverId, content } = req.body;
+    const senderId = req.auth._id;
+
+    // Validation
+    if (!matchId || !receiverId || !content) {
+      return res.status(400).json({
+        success: false,
+        message: "matchId, receiverId and content are required"
+      });
+    }
+
+    // Verify match exists and involves these users
+    const match = await Match.findOne({
+      _id: matchId,
+      $or: [
+        { user1: senderId, user2: receiverId },
+        { user1: receiverId, user2: senderId }
+      ],
+      isActive: true
+    });
+
+    if (!match) {
+      return res.status(403).json({
+        success: false,
+        message: "Invalid match or unauthorized"
+      });
+    }
+
+    // Create message
+    const message = await Message.create({
+      match: matchId,
+      sender: senderId,
+      receiver: receiverId,
+      content,
+      timestamp: new Date()
+    });
+
+    // Update match last message
+    await Match.findByIdAndUpdate(matchId, {
+      lastMessage: content,
+      lastMessageAt: new Date()
+    });
+
+    // Emit via Socket.io if receiver is online
+    req.app.get('io').to(receiverId).emit('receiveMessage', message);
+
+    res.status(201).json({
+      success: true,
+      message: "Message sent successfully",
+      sentMessage: message
+    });
+
+  } catch (error) {
+    console.error("Error in sendMessageController:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to send message",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+
+
+
 module.exports = {
   createAboutController,
   getAboutDataController,
@@ -700,5 +837,10 @@ module.exports = {
   likeUserController,
   dislikeUserController,
   getMatchesController,
-  getPotentialMatchesController
+  getPotentialMatchesController,
+  getMessagesController,
+  markMessagesAsReadController,
+  sendMessageController
+
+
 };

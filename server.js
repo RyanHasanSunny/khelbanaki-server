@@ -2,57 +2,74 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const dotenv = require('dotenv'); // For environment variables
+const dotenv = require('dotenv');
 const cors = require('cors');
-const color = require('colors'); // For colored console logs
-const morgan = require('morgan'); // For logging HTTP requests
-const connectDB = require('./config/db'); // MongoDB connection file
+const color = require('colors');
+const morgan = require('morgan');
+const connectDB = require('./config/db');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 
-
-
-dotenv.config();  // To load environment variables like JWT secret
-
-// MongoDB connection (removed deprecated options)
-connectDB ();
-
+dotenv.config();
+connectDB();
 
 const app = express();
+const httpServer = createServer(app);
 
+// Configure Socket.io
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
+// After creating the io instance
+app.set('io', io); // Add this line
 
+// Middleware
 app.use(express.json());
-app.use(morgan('dev')); // Use morgan for logging HTTP requests
+app.use(morgan('dev'));
 app.use(cors());
 
-// root route
+// Routes
 app.use('/api/v1/auth', require('./routes/userRoute'));
 app.use('/api/v1/userabout', require('./routes/userAboutRoute'));
 
-const PORT = process.env.PORT || 8080; // Use environment variable or default to 5000
+// Socket.io connection handler
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
 
+  socket.on('joinUserRoom', (userId) => {
+    socket.join(userId);
+    console.log(`User ${userId} joined their room`);
+  });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`.bgCyan.white.bold); // Log the server start message
+  socket.on('sendMessage', async ({ senderId, receiverId, message, matchId }) => {
+    try {
+      const Message = require('./models/messageModel');
+      const newMessage = await Message.create({
+        match: matchId,
+        sender: senderId,
+        receiver: receiverId,
+        content: message,
+        timestamp: new Date()
+      });
+
+      io.to(receiverId).emit('receiveMessage', newMessage);
+      io.to(senderId).emit('receiveMessage', newMessage);
+      
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+const PORT = process.env.PORT || 8080;
+httpServer.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`.bgCyan.white.bold);
+});

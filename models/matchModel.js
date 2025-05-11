@@ -15,7 +15,6 @@ const matchSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  // You can add additional fields like:
   lastMessage: String,
   lastMessageAt: Date,
   isActive: {
@@ -26,5 +25,12 @@ const matchSchema = new mongoose.Schema({
 
 // Index to ensure unique pairs and faster queries
 matchSchema.index({ user1: 1, user2: 1 }, { unique: true });
+
+// Add virtual for messages
+matchSchema.virtual('messages', {
+  ref: 'Message',
+  localField: '_id',
+  foreignField: 'match'
+});
 
 module.exports = mongoose.model('Match', matchSchema);
