@@ -26,6 +26,7 @@ const {
 } = require("../controllers/userAboutController");
 const {
   getUserProfileController,
+  getChatListController
 } = require("../controllers/getUserProfileController");
 
 const router = express.Router();
@@ -57,5 +58,6 @@ router.get("/potential-matches", requireSingIn, getPotentialMatchesController);
 router.get("/messages/:matchId", requireSingIn, getMessagesController);
 router.post("/messages/read", requireSingIn, markMessagesAsReadController);
 router.post("/send-message", requireSingIn, sendMessageController);
+router.get("/chat-list", requireSingIn, getChatListController);
 
 module.exports = router;

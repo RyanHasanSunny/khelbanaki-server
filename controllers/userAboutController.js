@@ -726,12 +726,12 @@ const getMessagesController = async (req, res) => {
 // Mark messages as read
 const markMessagesAsReadController = async (req, res) => {
   try {
-    const { messageIds } = req.body;
+    const { matchId } = req.body;
     const userId = req.auth._id;
 
     await Message.updateMany(
       {
-        _id: { $in: messageIds },
+        match: matchId,
         receiver: userId,
         read: false
       },
@@ -763,11 +763,11 @@ const sendMessageController = async (req, res) => {
     if (!matchId || !receiverId || !content) {
       return res.status(400).json({
         success: false,
-        message: "matchId, receiverId and content are required"
+        message: "All fields are required"
       });
     }
 
-    // Verify match exists and involves these users
+    // Verify match exists
     const match = await Match.findOne({
       _id: matchId,
       $or: [
@@ -799,8 +799,11 @@ const sendMessageController = async (req, res) => {
       lastMessageAt: new Date()
     });
 
-    // Emit via Socket.io if receiver is online
-    req.app.get('io').to(receiverId).emit('receiveMessage', message);
+    // Emit via Socket.io
+    const io = req.app.get('io');
+    io.to(matchId).emit('receiveMessage', message);
+    io.to(senderId).emit('messageSent', message);
+    io.to(receiverId).emit('receiveMessage', message);
 
     res.status(201).json({
       success: true,
@@ -817,7 +820,6 @@ const sendMessageController = async (req, res) => {
     });
   }
 };
-
 
 
 
